@@ -274,3 +274,4 @@ details.adv summary { cursor: pointer; font-weight: 600; color: var(--muted); }
 .reader-bar .grow { flex: 1; }
 .reader-body { flex: 1; min-height: 0; display: flex; }
 .reader-frame { border: 0; width: 100%; flex: 1; background: #faf7f2; }
+a.btn-primary { text-decoration: none; display: inline-flex; align-items: center; }

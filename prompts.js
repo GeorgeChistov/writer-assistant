@@ -35,7 +35,7 @@ ${about ? "Паспорт книги от автора (жанр, герои, и
 9. Объём — ровно столько, сколько нужно для пользы. Для разбора главы — подробно; для поста — коротко и ёмко.
 10. Никогда не придумывай реальные факты «из внешнего мира» (названия издательств, имена редакторов, статистику, цены). Если они нужны — предложи, где их проверить.
 
-${renderNotes(notes)}${renderAssets(opts.assets)}${opts.manuscript === 'none' ? materialsNote : '## РУКОПИСЬ\n' + renderBook(book)}`;
+${renderNotes(notes)}${renderAssets(opts.assets)}${opts.manuscript === 'none' ? materialsNote : opts.manuscript === 'skip' ? '' : '## РУКОПИСЬ\n' + renderBook(book)}`;
   }
 
   const materialsNote = `## МАТЕРИАЛЫ РУКОПИСИ

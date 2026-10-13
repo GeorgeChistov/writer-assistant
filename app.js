@@ -327,6 +327,31 @@ async function showLayout(chapterId) {
   dl.onclick = () => downloadFile(safeName((book.title || 'Рукопись') + ' — ' + (ch ? ch.title : 'вся книга') + ' с иллюстрациями') + '.html', html);
 }
 
+// ---- передача задания со страницы claude.ai в мастерскую (через адрес ссылки) ----
+function b64url(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function b64urlDecode(str) { let s = str.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const bin = atob(s); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; }
+async function packHandoff(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  if (typeof CompressionStream === 'undefined') return '0' + b64url(bytes);
+  const out = await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer();
+  return '1' + b64url(new Uint8Array(out));
+}
+async function unpackHandoff(str) {
+  let bytes = b64urlDecode(str.slice(1));
+  if (str[0] === '1') bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+function handoffUrl(packed) { return String((window.CONFIG || {}).webUrl || '').replace(/#.*$/, '') + '#wa=' + packed; }
+function handoffLink(a, payloadFn) {
+  let timer = null;
+  const refresh = () => {
+    a.dataset.ready = ''; clearTimeout(timer);
+    timer = setTimeout(async () => { try { a.href = handoffUrl(await packHandoff(payloadFn())); a.dataset.ready = '1'; } catch (e) { console.error(e); } }, 150);
+  };
+  a.addEventListener('click', e => { if (a.dataset.ready !== '1') { e.preventDefault(); toast('Секунду, готовлю ссылку. Нажмите ещё раз.'); refresh(); } });
+  return refresh;
+}
+
 // ================= хранилище: база SQLite через локальный сервер или браузер =================
 const Store = {
   mode: 'local', dbPath: '', db: null, user: null, uid: null, downloads: null, sample: null, cloudIndex: new Map(), queue: Promise.resolve(),
@@ -387,8 +412,8 @@ const Store = {
   serial(fn) { const run = this.queue.then(fn, fn); this.queue = run.catch(() => {}); return run; },
   async cloudLoad() {
     const db = this.db;
-    const [bookSnap, chSnap, notesSnap, chatSnap] = await Promise.all([
-      db.doc('state/book').get(), db.collection('chapters').orderBy('position').get(), db.doc('state/notes').get(), db.doc('state/chat').get()]);
+    const [bookSnap, chSnap, notesSnap, chatSnap, bibleSnap] = await Promise.all([
+      db.doc('state/book').get(), db.collection('chapters').orderBy('position').get(), db.doc('state/notes').get(), db.doc('state/chat').get(), db.doc('kv/visual_bible').get()]);
     const chapters = await Promise.all(chSnap.docs.map(async d => {
       const m = d.data() || {}; const n = m.parts || 0;
       const parts = await Promise.all(Array.from({ length: n }, (_, k) => db.doc('chapters/' + d.id + '/parts/p' + k).get()));
@@ -403,6 +428,7 @@ const Store = {
     return {
       book: { title: b.title || '', series: b.series || '', author: b.author || '', about: b.about || '', chapters },
       settings, notes: deepCopy((notesSnap.exists && notesSnap.data().items) || []), chat: deepCopy((chatSnap.exists && chatSnap.data().messages) || []),
+      kv: { visual_bible: (bibleSnap.exists && (bibleSnap.data() || {}).value) || '' },
       empty: !bookSnap.exists && chapters.length === 0
     };
   },
@@ -445,6 +471,7 @@ const Store = {
     return item.text;
   },
   media() { return this.mode === 'server' || (this.mode === 'local' && this.idb); },
+  mediaKind() { if (this.media()) return 'direct'; if (this.mode === 'cloud' && (window.CONFIG || {}).webUrl) return 'handoff'; return 'none'; },
   async listImages() {
     if (this.mode === 'server') return this.req('GET', 'images');
     return (await LocalDB.all('images')).map(r => this.mediaRow(r)).sort((a, b) => b.ts - a.ts);
@@ -498,11 +525,12 @@ const Store = {
   async listAudio() { if (this.mode === 'server') return this.req('GET', 'audio'); return (await LocalDB.all('audio')).map(r => this.mediaRow(r)).sort((a, b) => b.ts - a.ts); },
   async deleteAudio(id) { if (this.mode === 'server') return this.req('DELETE', 'audio/' + encodeURIComponent(id)); await LocalDB.del('audio', id); this.dropUrl(id); },
   async getKv(key) {
+    if (this.mode === 'cloud') { const sn = await this.db.doc('kv/' + key).get(); return sn.exists ? (sn.data() || {}).value : null; }
     if (this.mode === 'server') { const r = await this.req('GET', 'kv/' + encodeURIComponent(key)); return r ? r.value : null; }
     if (this.idb) { const v = await LocalDB.get('kv:' + key); return v === undefined ? null : v; }
     return load('wa_kv_' + key, null);
   },
-  async setKv(key, value) { if (this.mode === 'server') return this.req('PUT', 'kv/' + encodeURIComponent(key), { value: value }); if (this.idb) return LocalDB.set('kv:' + key, value); save('wa_kv_' + key, value); },
+  async setKv(key, value) { if (this.mode === 'cloud') return this.serial(() => this.db.doc('kv/' + key).set({ value: value })); if (this.mode === 'server') return this.req('PUT', 'kv/' + encodeURIComponent(key), { value: value }); if (this.idb) return LocalDB.set('kv:' + key, value); save('wa_kv_' + key, value); },
 
   async req(method, path, data) {
     const opts = { method, cache: 'no-store' };
@@ -573,10 +601,10 @@ function renderBookDependent() {
 }
 
 // ================= настройки =================
-const DEFAULTS = { apiKey: '', model: 'gemini-3.8-flash', baseUrl: 'https://generativelanguage.googleapis.com', thinking: 'auto', elevenKey: '', imageModel: 'gemini-nano-banana-2.1', elevenModel: 'eleven_v4' };
+const DEFAULTS = { apiKey: '', model: 'gemini-3.8-flash', baseUrl: 'https://generativelanguage.googleapis.com', thinking: 'auto', elevenKey: '', imageModel: 'gemini-nano-banana-2.1', elevenModel: 'eleven_v4', textHome: 'here', claudeUrl: '' };
 function getSettings() {
   const cfg = window.CONFIG || {}; const ls = settingsMem || {}; const s = Object.assign({}, DEFAULTS);
-  ['apiKey', 'model', 'baseUrl', 'thinking', 'elevenKey', 'imageModel', 'elevenModel'].forEach(k => { if (cfg[k]) s[k] = cfg[k]; if (ls[k]) s[k] = ls[k]; });
+  ['apiKey', 'model', 'baseUrl', 'thinking', 'elevenKey', 'imageModel', 'elevenModel', 'textHome', 'claudeUrl'].forEach(k => { if (cfg[k]) s[k] = cfg[k]; if (ls[k]) s[k] = ls[k]; });
   s.elevenSource = ls.elevenKey ? 'app' : (cfg.elevenKey ? 'file' : 'none');
   s.apiKey = String(s.apiKey).trim(); s.model = String(s.model).trim(); s.baseUrl = String(s.baseUrl).trim().replace(/\/+$/, '');
   s.keySource = ls.apiKey ? 'app' : (cfg.apiKey ? 'file' : 'none');
@@ -585,7 +613,7 @@ function getSettings() {
 function updateKeyState() {
   const s = getSettings(); const claude = Engine.kind() === 'claude';
   $('#keyBanner').classList.toggle('hidden', claude || !!s.apiKey);
-  $('#sidebarFoot').innerHTML = 'Модель: <b>' + esc(Engine.label()) + '</b><br>' + (claude ? 'Через ваш аккаунт claude.ai' : 'Ключ: ' + (s.apiKey ? '<span style="color:#1f8a4c">подключён ✔</span>' : '<span style="color:#c0392b">не задан ✘</span>')) +
+  $('#sidebarFoot').innerHTML = (textsElsewhere() ? 'Тексты: <b>claude.ai</b>, подписка Claude<br>Здесь: картинки и озвучка' : 'Модель: <b>' + esc(Engine.label()) + '</b>') + '<br>' + (claude ? 'Через ваш аккаунт claude.ai' : 'Ключ: ' + (s.apiKey ? '<span style="color:#1f8a4c">подключён ✔</span>' : '<span style="color:#c0392b">не задан ✘</span>')) +
     '<br>Данные: ' + (Store.mode === 'server' ? '<span style="color:#1f8a4c">база SQLite ✔</span>' : Store.mode === 'cloud' ? '<span style="color:#1f8a4c">облако claude.ai ✔</span>' : Store.idb ? '<span style="color:#1f8a4c">в этом браузере ✔</span>' : '<span style="color:#b7791f">только до закрытия страницы</span>');
 }
 
@@ -874,7 +902,7 @@ function optionGroup(container, items, opts) {
   });
   function paint() { $$('.opt,.chip', container).forEach(b => b.classList.toggle('on', selected.has(b.dataset.id))); }
   function get() { return opts.multi ? Array.from(selected) : Array.from(selected)[0]; }
-  paint(); return { get };
+  paint(); return { get, set(id) { if (items.some(it => it.id === id)) { selected = new Set([id]); paint(); } } };
 }
 function targetPicker(container, opts) {
   opts = opts || {}; let mode = 'chapters'; let checked = null;
@@ -926,7 +954,11 @@ const SECTIONS = [
   { id: 'settings', icon: '⚙️', title: 'Настройки', service: true },
   { id: 'help', icon: '❓', title: 'Помощь', service: true }
 ];
+let currentSection = 'home';
+const TEXT_SECTIONS = ['review', 'structure', 'translate', 'blurb', 'promo', 'letters', 'chat'];
+function textsElsewhere() { return Store.mode === 'local' && getSettings().textHome === 'claude'; }
 function showSection(id) {
+  currentSection = id;
   $$('.section').forEach(s => s.classList.toggle('hidden', s.id !== 'sec-' + id));
   $$('.nav-btn').forEach(b => b.classList.toggle('on', b.dataset.id === id));
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -935,17 +967,40 @@ function showSection(id) {
   if (id === 'chat') scrollChat();
 }
 function initNav() {
-  const nav = $('#nav'); let sepDone = false;
-  const shown = SECTIONS.filter(s => !(s.media && !Store.media()));
+  const nav = $('#nav'); nav.innerHTML = ''; let sepDone = false;
+  const away = textsElsewhere();
+  const shown = SECTIONS.filter(s => !(s.media && Store.mediaKind() === 'none') && !(away && TEXT_SECTIONS.indexOf(s.id) >= 0));
   shown.forEach(s => {
     if (s.service && !sepDone) { nav.appendChild(el('div', 'nav-sep')); sepDone = true; }
     const b = el('button', 'nav-btn', '<span class="ic">' + s.icon + '</span><span>' + esc(s.title) + '</span>'); b.type = 'button'; b.dataset.id = s.id; b.onclick = () => showSection(s.id); nav.appendChild(b);
   });
-  const cards = $('#homeCards');
+  const cards = $('#homeCards'); cards.innerHTML = '';
   shown.filter(s => s.desc).forEach(s => {
     const c = el('button', 'card', '<span class="ic">' + s.icon + '</span><b>' + esc(s.title) + '</b><span>' + esc(s.desc) + '</span>'); c.type = 'button'; c.onclick = () => showSection(s.id); cards.appendChild(c);
   });
   $$('[data-go]').forEach(b => b.onclick = () => showSection(b.dataset.go));
+  $$('.nav-btn').forEach(b => b.classList.toggle('on', b.dataset.id === currentSection));
+}
+function renumberSteps(sec) { let n = 0; $$('.step', sec).forEach(st => { const num = $('.num', st); if (num && !st.classList.contains('hidden')) num.textContent = String(++n); }); }
+function applyTextHome() {
+  const away = textsElsewhere(); const cu = getSettings().claudeUrl;
+  initNav();
+  if (away && TEXT_SECTIONS.indexOf(currentSection) >= 0) showSection('home');
+  const th = $('#textHint');
+  if (away) { th.innerHTML = '📝 <b>Тексты</b> готовит Claude на странице claude.ai по вашей подписке: разбор рукописи, посты, письма, задания для картинок и разметку озвучки' + (cu ? '. <a href="' + esc(cu) + '" target="_blank" rel="noopener">Открыть страницу claude.ai</a>' : '') + '. Здесь Nano Banana рисует, а ElevenLabs озвучивает.'; th.classList.remove('hidden'); }
+  else th.classList.add('hidden');
+  if (Store.mode !== 'local') return;
+  const hide = (node, h) => { if (node) node.classList.toggle('hidden', h); };
+  hide($('#imgKinds').closest('.step'), away); hide($('#imgTarget').closest('.step'), away); hide($('#imgExtra'), away);
+  hide($('#imgPromptBtn').closest('.run-row'), away); hide($('#imgBible').closest('.step'), away); hide($('#audPrepBtn'), away);
+  if (away) $('#imgPromptStep').classList.remove('hidden');
+  const ii = $('#imgModeInfo'), ai = $('#audModeInfo');
+  if (away) {
+    ii.innerHTML = 'Задание для художника готовит Claude на странице claude.ai и присылает сюда кнопкой «Нарисовать в мастерской». Можно и самому описать картинку в поле ниже.'; ii.classList.remove('hidden');
+    ai.innerHTML = 'Интонации расставляет Claude на странице claude.ai и присылает текст сюда кнопкой «Озвучить в мастерской». Можно и вставить текст самому.'; ai.classList.remove('hidden');
+  } else { ii.classList.add('hidden'); ai.classList.add('hidden'); }
+  renumberSteps($('#sec-images')); renumberSteps($('#sec-audio'));
+  updateKeyState();
 }
 
 // ---- 1. Замечания
@@ -1255,16 +1310,17 @@ function fillSettings() {
   $('#setEleven').value = ls.elevenKey || '';
   $('#setElevenSource').textContent = s.elevenSource === 'app' ? 'Используется ключ ElevenLabs, сохранённый в приложении.' : s.elevenSource === 'file' ? 'Используется ключ ElevenLabs из файла config.js.' : 'Ключ ElevenLabs не задан — озвучка не будет работать.';
   $('#setImageModel').value = s.imageModel || ''; $('#setElevenModel').value = s.elevenModel || 'eleven_v4';
+  $('#setTextHome').value = s.textHome === 'claude' ? 'claude' : 'here';
 }
 function readSettingsForm() {
   const model = $('#setModel').value === 'custom' ? $('#setModelCustom').value.trim() : $('#setModel').value;
-  return { apiKey: $('#setKey').value.trim(), model: model || DEFAULTS.model, thinking: $('#setThinking').value, baseUrl: ($('#setBase').value.trim() || DEFAULTS.baseUrl).replace(/\/+$/, ''), elevenKey: $('#setEleven').value.trim(), imageModel: $('#setImageModel').value.trim() || DEFAULTS.imageModel, elevenModel: $('#setElevenModel').value || DEFAULTS.elevenModel };
+  return Object.assign({}, settingsMem, { textHome: $('#setTextHome').value === 'claude' ? 'claude' : 'here', apiKey: $('#setKey').value.trim(), model: model || DEFAULTS.model, thinking: $('#setThinking').value, baseUrl: ($('#setBase').value.trim() || DEFAULTS.baseUrl).replace(/\/+$/, ''), elevenKey: $('#setEleven').value.trim(), imageModel: $('#setImageModel').value.trim() || DEFAULTS.imageModel, elevenModel: $('#setElevenModel').value || DEFAULTS.elevenModel });
 }
 function initSettings() {
   $('#setModel').onchange = () => $('#setModelCustomWrap').classList.toggle('hidden', $('#setModel').value !== 'custom');
   $('#setElevenShow').onclick = () => { const i = $('#setEleven'); i.type = i.type === 'password' ? 'text' : 'password'; $('#setElevenShow').textContent = i.type === 'password' ? 'Показать' : 'Скрыть'; };
   $('#setKeyShow').onclick = () => { const i = $('#setKey'); i.type = i.type === 'password' ? 'text' : 'password'; $('#setKeyShow').textContent = i.type === 'password' ? 'Показать' : 'Скрыть'; };
-  $('#setSave').onclick = () => { settingsMem = readSettingsForm(); Store.saveSettings(settingsMem); updateKeyState(); fillSettings(); $('#setStatus').innerHTML = ''; toast('Настройки сохранены'); };
+  $('#setSave').onclick = () => { settingsMem = readSettingsForm(); Store.saveSettings(settingsMem); applyTextHome(); updateKeyState(); fillSettings(); $('#setStatus').innerHTML = ''; toast('Настройки сохранены'); };
   $('#setReset').onclick = async () => { if (await ask('Сбросить настройки? Ключ, сохранённый в приложении, будет удалён.', { ok: 'Сбросить', danger: true })) { settingsMem = {}; Store.saveSettings(settingsMem); updateKeyState(); fillSettings(); $('#setStatus').innerHTML = ''; } };
   $('#setTest').onclick = async () => {
     settingsMem = readSettingsForm(); Store.saveSettings(settingsMem); updateKeyState(); const s = getSettings(); const st = $('#setStatus');
@@ -1277,8 +1333,9 @@ function initSettings() {
     if (!s.apiKey) { st.innerHTML = '<div class="error">Сначала вставьте ключ.</div>'; return; }
     st.innerHTML = '<div class="muted" style="margin-top:10px">Проверяю…</div>'; $('#setTest').disabled = true;
     try {
-      const res = await fetch(s.baseUrl + '/v1beta/models/' + encodeURIComponent(s.model), { headers: { 'x-goog-api-key': s.apiKey } });
-      if (res.ok) st.innerHTML = '<div class="ok-box">Подключение работает. Модель <b>' + esc(s.model) + '</b> доступна — можно пользоваться помощником.</div>';
+      const testModel = textsElsewhere() ? s.imageModel : s.model;
+      const res = await fetch(s.baseUrl + '/v1beta/models/' + encodeURIComponent(testModel), { headers: { 'x-goog-api-key': s.apiKey } });
+      if (res.ok) st.innerHTML = '<div class="ok-box">Подключение работает. Модель <b>' + esc(testModel) + '</b> доступна — можно пользоваться помощником.</div>';
       else { let detail = ''; try { const j = await res.json(); detail = (j.error && j.error.message) || ''; } catch (e) { /* нет деталей */ } const err = new Error('HTTP'); err.status = res.status; err.detail = detail; st.innerHTML = '<div class="error">' + esc(friendly(err)) + '</div>'; }
     } catch (e) { st.innerHTML = '<div class="error">' + esc(friendly(new Error('NETWORK'))) + '</div>'; }
     if (getSettings().elevenKey && Store.media()) {
@@ -1294,7 +1351,8 @@ async function llmText(prompt, opts) {
   opts = opts || {};
   if (!ensureKey()) throw new Error('Нет ключа');
   let sys;
-  if (Engine.kind() === 'claude') { const mat = await cloudMaterials({ kind: 'whole' }, opts.progress || (() => {}), opts.signal); sys = P.system(book, notes, sysOpts({ manuscript: 'none' })) + '\n\n' + mat.context; }
+  if (opts.bare) sys = P.system(book, notes, sysOpts({ manuscript: 'skip' }));
+  else if (Engine.kind() === 'claude') { const mat = await cloudMaterials({ kind: 'whole' }, opts.progress || (() => {}), opts.signal); sys = P.system(book, notes, sysOpts({ manuscript: 'none' })) + '\n\n' + mat.context; }
   else sys = P.system(book, notes, sysOpts());
   let text = '';
   await callModel({ systemText: sys, userText: prompt, signal: opts.signal, tier: opts.tier, onChunk: t => { text += t; if (opts.onText) opts.onText(text); } });
@@ -1321,6 +1379,7 @@ async function refreshAssets() {
 
 // ---- 8. Иллюстрации
 let imagesCache = null;
+let imgUI = null;
 function renderImageCards(container, rows) {
   container.innerHTML = '';
   rows.forEach(im => {
@@ -1347,17 +1406,45 @@ async function renderGallery() {
   renderImageCards($('#imgGallery'), imagesCache);
   const sel = $('#imgLayoutChapter'); sel.innerHTML = '<option value="all">Вся книга</option>' + book.chapters.map(c => '<option value="' + esc(c.id) + '">' + esc(c.title) + '</option>').join('');
 }
+function chapterOf(target, fallbackFrag) {
+  // глава, к которой относится картинка или запись
+  const ho = target && target.handoff;
+  if (ho) {
+    let id = ho.chapter_id || ''; const title = ho.chapter_title || '';
+    if (id && !book.chapters.some(c => c.id === id)) { const byTitle = book.chapters.find(c => c.title === title); if (byTitle) id = byTitle.id; }
+    return { id, title };
+  }
+  const frag = fallbackFrag || '';
+  const id = target ? (target.kind === 'chapters' ? target.ids[0] : findChapterByText(frag)) : '';
+  return { id, title: id ? ((book.chapters.find(c => c.id === id) || {}).title || '') : '' };
+}
 function initImages() {
-  const avail = Store.media();
-  $('#imagesUnavailable').classList.toggle('hidden', avail);
+  const mk = Store.mediaKind(); const direct = mk === 'direct', handoff = mk === 'handoff';
+  $('#imagesUnavailable').classList.toggle('hidden', mk !== 'none');
+  let refreshHandoff = () => {};
   const kinds = optionGroup($('#imgKinds'), modesOf(P.imageKinds));
   const tp = targetPicker($('#imgTarget'));
-  const styles = optionGroup($('#imgStyles'), P.imageStyles.map(st => ({ id: st.id, label: st.label, hint: st.hint })));
-  const aspect = optionGroup($('#imgAspect'), [{ id: '16:9', label: 'Широкий 16:9' }, { id: '3:4', label: 'Страница 3:4' }, { id: '1:1', label: 'Квадрат 1:1' }, { id: '9:16', label: 'Вертикальный 9:16' }], { chips: true });
+  const styles = optionGroup($('#imgStyles'), P.imageStyles.map(st => ({ id: st.id, label: st.label, hint: st.hint })), { onChange: () => refreshHandoff() });
+  const aspect = optionGroup($('#imgAspect'), [{ id: '16:9', label: 'Широкий 16:9' }, { id: '3:4', label: 'Страница 3:4' }, { id: '1:1', label: 'Квадрат 1:1' }, { id: '9:16', label: 'Вертикальный 9:16' }], { chips: true, onChange: () => refreshHandoff() });
   let current = null;
   $('#imgBible').value = kvMem.visual_bible || '';
+  if (handoff) {
+    // claude.ai: задание готовит Claude по подписке, рисует мастерская
+    $('#imgDrawBtn').classList.add('hidden'); $('#imgHandoff').classList.remove('hidden');
+    $('#imgResults').classList.add('hidden'); $('#imgGallery').closest('.step').classList.add('hidden');
+    const ii = $('#imgModeInfo'); ii.innerHTML = 'Здесь Claude готовит задание для художника по вашей подписке. Рисует Nano Banana в мастерской: она откроется в новой вкладке, там проверьте задание и нажмите «Нарисовать». Готовые картинки хранятся в мастерской.'; ii.classList.remove('hidden');
+    refreshHandoff = handoffLink($('#imgHandoff'), () => {
+      const styleObj = P.imageStyles.find(st => st.id === styles.get()) || P.imageStyles[0];
+      const t = current && current.target; const frag = t && t.kind === 'text' ? t.text : ''; const ch = chapterOf(t, frag);
+      return { v: 1, kind: 'draw', caption: $('#imgCaption').value.trim(), prompt: $('#imgPrompt').value.trim(), style: styleObj.id, aspect: aspect.get(), count: parseInt($('#imgCount').value, 10) || 2,
+        chapter_id: ch.id, chapter_title: ch.title, anchor: frag ? frag.trim().slice(0, 200) : '', fragment: frag.slice(0, 3000), claudeUrl: (window.CONFIG || {}).claudeUrl || '' };
+    });
+    $('#imgHandoff').addEventListener('click', e => { if (!$('#imgPrompt').value.trim()) { e.preventDefault(); toast('Сначала придумайте задание для художника'); } });
+    ['#imgCaption', '#imgPrompt'].forEach(sel => $(sel).addEventListener('input', () => refreshHandoff()));
+    $('#imgCount').addEventListener('change', () => refreshHandoff());
+  }
   $('#imgPromptBtn').onclick = async () => {
-    if (!avail) { toast(MEDIA_OFF, 6000); return; }
+    if (mk === 'none') { toast(MEDIA_OFF, 6000); return; }
     let kind = kinds.get(); let target = null;
     if (kind === 'scene' || kind === 'chapter' || kind === 'place') { target = tp.get(); if (!target) return; }
     if (kind === 'scene' && target && target.kind === 'chapters') kind = 'chapter';
@@ -1372,21 +1459,21 @@ function initImages() {
       $('#imgCaption').value = j.caption || ''; $('#imgPrompt').value = String(j.prompt).trim();
       current = { kind, target, aspect: o.aspect, styleId: styleObj.id };
       $('#imgPromptStep').classList.remove('hidden'); $('#imgPromptStep').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      $('#imgPromptStatus').textContent = '';
+      $('#imgPromptStatus').textContent = ''; refreshHandoff();
     } catch (e) { $('#imgPromptStatus').textContent = ''; toast(e.message === 'HTTP' || e.message === 'NETWORK' || e.message === 'SAMPLE' ? friendly(e) : (e.message || String(e)), 7000); }
     btn.disabled = false;
   };
   $('#imgDrawBtn').onclick = async () => {
-    if (!current) return;
+    if (!direct) { toast(MEDIA_OFF, 6000); return; }
+    const prompt = $('#imgPrompt').value.trim(); if (!prompt) { toast('Опишите картинку'); return; }
     const count = parseInt($('#imgCount').value, 10) || 2;
     const styleObj = P.imageStyles.find(st => st.id === styles.get()) || P.imageStyles[0];
-    const prompt = $('#imgPrompt').value.trim(); if (!prompt) { toast('Опишите картинку'); return; }
     const fullPrompt = prompt + '\n\nStyle: ' + styleObj.en + '. No text, no captions, no letters, no watermark.';
-    const t = current.target; const frag = t && t.kind === 'text' ? t.text : '';
-    const chapterId = t ? (t.kind === 'chapters' ? t.ids[0] : findChapterByText(frag)) : '';
-    const chapterTitle = chapterId ? ((book.chapters.find(c => c.id === chapterId) || {}).title || '') : '';
-    const body = { prompt: fullPrompt, aspect: aspect.get() || current.aspect, count, caption: $('#imgCaption').value.trim(), style: styleObj.id, style_label: styleObj.label,
-      chapter_id: chapterId, chapter_title: chapterTitle, anchor: frag ? frag.trim().slice(0, 200) : '', fragment: frag.slice(0, 3000) };
+    const t = current && current.target; const ho = current && current.handoff;
+    const frag = ho ? String(ho.fragment || '') : (t && t.kind === 'text' ? t.text : '');
+    const ch = chapterOf(ho ? current : t, frag);
+    const body = { prompt: fullPrompt, aspect: aspect.get(), count, caption: $('#imgCaption').value.trim(), style: styleObj.id, style_label: styleObj.label,
+      chapter_id: ch.id, chapter_title: ch.title, anchor: ho ? String(ho.anchor || '') : (frag ? frag.trim().slice(0, 200) : ''), fragment: frag.slice(0, 3000) };
     const btn = $('#imgDrawBtn'); btn.disabled = true; $('#imgStatus').textContent = 'Рисую (' + count + ')… обычно 15–40 секунд';
     try {
       const rows = await Store.generateImages(body);
@@ -1403,19 +1490,23 @@ function initImages() {
   };
   $('#imgBibleSave').onclick = async () => {
     const v = $('#imgBible').value.trim(); kvMem.visual_bible = v;
-    if (Store.media()) { try { await Store.setKv('visual_bible', v); toast('Сохранено'); } catch (e) { toast('Не удалось сохранить: ' + e.message); } }
+    if (Store.media() || Store.mode === 'cloud') { try { await Store.setKv('visual_bible', v); toast('Сохранено'); } catch (e) { toast('Не удалось сохранить: ' + e.message); } }
     else toast('Сохранено до закрытия страницы');
   };
-  $('#imgLayoutBtn').onclick = () => { if (!avail) return; showLayout($('#imgLayoutChapter').value || 'all'); };
-  if (avail) renderGallery();
+  $('#imgLayoutBtn').onclick = () => { if (!direct) return; showLayout($('#imgLayoutChapter').value || 'all'); };
+  imgUI = { styles, aspect, setCurrent: c => { current = c; } };
+  if (direct) renderGallery();
 }
 
 // ---- 9. Озвучка
 let voicePreviewEl = null;
+let audUI = null;
+const HANDOFF_MAX = 20000;
 function initAudio() {
-  const avail = Store.media();
-  $('#audioUnavailable').classList.toggle('hidden', avail);
-  const manner = optionGroup($('#audManner'), modesOf(P.narrationManners));
+  const mk = Store.mediaKind(); const direct = mk === 'direct', handoff = mk === 'handoff';
+  $('#audioUnavailable').classList.toggle('hidden', mk !== 'none');
+  let refreshHandoff = () => {};
+  const manner = optionGroup($('#audManner'), modesOf(P.narrationManners), { onChange: () => refreshHandoff() });
   const tp = targetPicker($('#audTarget'));
   let voices = [], usage = null, selected = null, scriptTarget = null;
   function paintSelected() { $$('#voiceList .voice-card').forEach(c => { const on = selected && c.dataset.id === selected.id; c.classList.toggle('on', !!on); const b = $('.b-pick', c); if (b) { b.textContent = on ? 'Выбран' : 'Выбрать'; b.classList.toggle('on', !!on); } }); }
@@ -1459,34 +1550,59 @@ function initAudio() {
     } else $('#audioUsage').textContent = '';
   }
   async function loadVoices(refresh) {
-    if (!avail) return;
+    if (!direct) return;
     $('#voiceList').innerHTML = '<div class="muted">Загружаю голоса…</div>';
     try { const r = await Store.listVoices(refresh); voices = r.voices || []; usage = r.usage || null; renderVoices(); }
     catch (e) { $('#voiceList').innerHTML = '<div class="error">' + esc(e.message) + '</div>'; }
   }
-  function showScript(text, target) { scriptTarget = target; $('#audScript').value = text; $('#audScriptStep').classList.remove('hidden'); $('#audScriptStep').scrollIntoView({ behavior: 'smooth', block: 'start' }); updateCost(text.length); }
+  function showScript(text, target) { scriptTarget = target; $('#audScript').value = text; $('#audScriptStep').classList.remove('hidden'); $('#audScriptStep').scrollIntoView({ behavior: 'smooth', block: 'start' }); updateCost(text.length); refreshHandoff(); }
   function updateCost(n) {
     const lim = usage && usage.character_limit ? usage.character_limit : 0;
     $('#audStatus').textContent = n ? fmtNum(n) + ' знаков' + (lim ? ' ≈ ' + Math.max(1, Math.round(n / lim * 100)) + '% месячного лимита' : '') : '';
   }
+  function recordTitle(text, target) {
+    const ho = target && target.handoff; if (ho && ho.title) return ho.title;
+    const ch = chapterOf(target, target && target.text);
+    const plain = text.replace(/\[[^\]]*\]|<break[^>]*>/g, '').replace(/\s+/g, ' ').replace(/^[«"'“„\s]+/, '').trim();
+    return (ch.title || (target && target.label) || 'Озвучка') + ': «' + plain.slice(0, 50) + (plain.length > 50 ? '…' : '') + '»';
+  }
   async function confirmLength(n) { if (n <= 6000) return true; return ask('Текст длинный: ' + fmtNum(n) + ' знаков. Озвучка потратит заметную часть месячного лимита ElevenLabs. Продолжить?', { ok: 'Продолжить' }); }
+  function tooLongForHandoff(n) { if (handoff && n > HANDOFF_MAX) { toast('Для озвучки выберите фрагмент до 20 000 знаков: это почти весь месячный лимит ElevenLabs.', 6000); return true; } return false; }
+  if (handoff) {
+    // claude.ai: интонации расставляет Claude по подписке, читает мастерская
+    $('#voiceList').closest('.step').classList.add('hidden'); $('#audGallery').closest('.step').classList.add('hidden');
+    $('#audSpeakBtn').classList.add('hidden'); $('#audHandoff').classList.remove('hidden');
+    const ai = $('#audModeInfo'); ai.innerHTML = 'Здесь Claude расставляет интонации по вашей подписке. Читает ElevenLabs в мастерской: она откроется в новой вкладке, там выберите голос и нажмите «Озвучить». Записи хранятся в мастерской.'; ai.classList.remove('hidden');
+    refreshHandoff = handoffLink($('#audHandoff'), () => {
+      const text = $('#audScript').value.trim(); const ch = chapterOf(scriptTarget, scriptTarget && scriptTarget.text);
+      return { v: 1, kind: 'speak', text, manner: manner.get(), chapter_id: ch.id, chapter_title: ch.title, title: recordTitle(text, scriptTarget), claudeUrl: (window.CONFIG || {}).claudeUrl || '' };
+    });
+    $('#audHandoff').addEventListener('click', e => { const n = $('#audScript').value.trim().length; if (!n) { e.preventDefault(); toast('Текст пустой'); } else if (tooLongForHandoff(n)) e.preventDefault(); });
+    renumberSteps($('#sec-audio'));
+  }
+  $('#audScript').addEventListener('input', () => { updateCost($('#audScript').value.length); refreshHandoff(); });
   $('#audPrepBtn').onclick = async () => {
-    if (!avail) { toast(MEDIA_OFF, 6000); return; }
+    if (mk === 'none') { toast(MEDIA_OFF, 6000); return; }
     const target = tp.get(); if (!target) return;
+    if (tooLongForHandoff(target.text.length)) return;
     if (!await confirmLength(target.text.length)) return;
     const btn = $('#audPrepBtn'); btn.disabled = true; $('#audPrepStatus').textContent = 'Расставляю интонации…';
-    try { const script = await llmText(P.narrationScript({ text: target.text, manner: manner.get(), model: getSettings().elevenModel })); showScript(script.trim(), target); $('#audPrepStatus').textContent = ''; }
+    try { const script = await llmText(P.narrationScript({ text: target.text, manner: manner.get(), model: getSettings().elevenModel }), { bare: true }); showScript(script.trim(), target); $('#audPrepStatus').textContent = ''; }
     catch (e) { $('#audPrepStatus').textContent = ''; toast(friendly(e), 6000); }
     btn.disabled = false;
   };
-  $('#audSkipBtn').onclick = async () => { if (!avail) { toast(MEDIA_OFF, 6000); return; } const target = tp.get(); if (!target) return; if (!await confirmLength(target.text.length)) return; showScript(target.text.trim(), target); };
+  $('#audSkipBtn').onclick = async () => {
+    if (mk === 'none') { toast(MEDIA_OFF, 6000); return; }
+    const target = tp.get(); if (!target) return;
+    if (tooLongForHandoff(target.text.length)) return;
+    if (!await confirmLength(target.text.length)) return; showScript(target.text.trim(), target);
+  };
   $('#audSpeakBtn').onclick = async () => {
+    if (!direct) { toast(MEDIA_OFF, 6000); return; }
     if (!selected) { toast('Сначала выберите голос'); return; }
     const text = $('#audScript').value.trim(); if (!text) { toast('Текст пустой'); return; }
-    const t = scriptTarget; const chapterId = t ? (t.kind === 'chapters' ? t.ids[0] : findChapterByText(t.text)) : '';
-    const chapterTitle = chapterId ? ((book.chapters.find(c => c.id === chapterId) || {}).title || '') : '';
-    const plain = text.replace(/\[[^\]]*\]|<break[^>]*>/g, '').replace(/\s+/g, ' ').replace(/^[«"'“„\s]+/, '').trim();
-    const body = { voice_id: selected.id, voice_name: String(selected.name).split(' - ')[0], text, model_id: getSettings().elevenModel, manner: manner.get(), chapter_id: chapterId, chapter_title: chapterTitle, title: (chapterTitle || (t ? t.label : 'Озвучка')) + ': «' + plain.slice(0, 50) + (plain.length > 50 ? '…' : '') + '»' };
+    const ch = chapterOf(scriptTarget, scriptTarget && scriptTarget.text);
+    const body = { voice_id: selected.id, voice_name: String(selected.name).split(' - ')[0], text, model_id: getSettings().elevenModel, manner: manner.get(), chapter_id: ch.id, chapter_title: ch.title, title: recordTitle(text, scriptTarget) };
     const btn = $('#audSpeakBtn'); btn.disabled = true; $('#audStatus').textContent = 'Озвучиваю… примерно ' + Math.max(10, Math.round(text.length / 60)) + ' секунд';
     try {
       const row = await Store.tts(body);
@@ -1506,14 +1622,14 @@ function initAudio() {
     return it;
   }
   async function renderAudioGallery() {
-    if (!avail) return;
+    if (!direct) return;
     let rows; try { rows = await Store.listAudio(); } catch (e) { $('#audGallery').innerHTML = '<div class="error">' + esc(e.message) + '</div>'; return; }
     assetsMem.audio = rows;
     $('#audStats').textContent = rows.length ? '— ' + rows.length + ' ' + plural(rows.length, 'запись', 'записи', 'записей') : '— пока пусто';
     const g = $('#audGallery'); g.innerHTML = ''; rows.forEach(r => g.appendChild(audioItem(r, false)));
   }
   $('#voiceCreate').onclick = async () => {
-    if (!avail) return;
+    if (!direct) return;
     const files = Array.from($('#voiceFiles').files || []); const name = $('#voiceName').value.trim() || 'Мой голос';
     if (!files.length) { toast('Выберите аудиофайл с записью голоса'); return; }
     if (usage && usage.can_use_instant_voice_cloning === false) { if (!await ask('На вашем тарифе ElevenLabs клонирование голоса недоступно — запрос, скорее всего, будет отклонён. Всё равно попробовать?', { ok: 'Попробовать' })) return; }
@@ -1525,7 +1641,36 @@ function initAudio() {
     } catch (e) { $('#voiceStatus').textContent = ''; toast(e.message || String(e), 8000); }
     btn.disabled = false;
   };
-  if (avail) { loadVoices(false); renderAudioGallery(); }
+  audUI = { manner, showScript };
+  if (direct) { loadVoices(false); renderAudioGallery(); }
+}
+
+// ---- приём задания со страницы claude.ai (мастерская)
+async function receiveHandoff() {
+  const h = location.hash || ''; if (h.indexOf('#wa=') !== 0) return;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* адрес не меняем */ }
+  if (Store.mediaKind() !== 'direct') { toast(MEDIA_OFF, 6000); return; }
+  let obj; try { obj = await unpackHandoff(h.slice(4)); } catch (e) { toast('Не удалось прочитать задание из ссылки. Нажмите кнопку на странице claude.ai ещё раз.', 7000); return; }
+  if (!obj || obj.v !== 1) return;
+  let changed = false;
+  if (obj.claudeUrl && settingsMem.claudeUrl !== obj.claudeUrl) { settingsMem.claudeUrl = obj.claudeUrl; changed = true; }
+  if (settingsMem.textHome !== 'claude') { settingsMem.textHome = 'claude'; changed = true; setTimeout(() => toast('Тексты теперь готовит Claude на странице claude.ai, а здесь рисуются картинки и озвучивается текст. Изменить можно в «Настройках».', 8000), 400); }
+  if (changed) { Store.saveSettings(settingsMem); applyTextHome(); }
+  if (obj.kind === 'draw' && imgUI) {
+    showSection('images');
+    if (obj.style) imgUI.styles.set(obj.style); if (obj.aspect) imgUI.aspect.set(obj.aspect);
+    $('#imgCount').value = ['1', '2', '4'].indexOf(String(obj.count)) >= 0 ? String(obj.count) : '2';
+    $('#imgCaption').value = obj.caption || ''; $('#imgPrompt').value = obj.prompt || '';
+    imgUI.setCurrent({ handoff: obj });
+    $('#imgPromptStep').classList.remove('hidden');
+    $('#imgStatus').textContent = 'Задание пришло со страницы claude.ai. Проверьте и нажмите «Нарисовать».';
+    setTimeout(() => $('#imgPromptStep').scrollIntoView({ behavior: 'smooth', block: 'start' }), 350);
+  } else if (obj.kind === 'speak' && audUI) {
+    showSection('audio');
+    if (obj.manner) audUI.manner.set(obj.manner);
+    audUI.showScript(String(obj.text || ''), { handoff: obj });
+    setTimeout(() => { $('#audStatus').textContent = 'Текст пришёл со страницы claude.ai. Выберите голос выше и нажмите «Озвучить». ' + $('#audStatus').textContent; $('#audScriptStep').scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 350);
+  }
 }
 
 // ================= старт =================
@@ -1555,10 +1700,13 @@ async function init() {
   }
   $$('[data-modes]').forEach(e => e.classList.toggle('hidden', String(e.dataset.modes).split(' ').indexOf(Store.mode) < 0));
   const webUrl = (window.CONFIG || {}).webUrl;
-  if (Store.mode === 'cloud' && webUrl) { const h = $('#webHint'); h.innerHTML = '🎨🎧 <b>Иллюстрации и озвучка</b> работают в веб-версии помощника: <a href="' + esc(webUrl) + '" target="_blank" rel="noopener">' + esc(webUrl) + '</a>'; h.classList.remove('hidden'); }
+  if (Store.mode === 'cloud' && webUrl) { const h = $('#webHint'); h.innerHTML = '🎨🎧 <b>Иллюстрации и озвучка.</b> Задание для художника и разметку интонаций Claude готовит здесь, по вашей подписке. Рисует и читает мастерская: <a href="' + esc(webUrl) + '" target="_blank" rel="noopener">' + esc(webUrl) + '</a>. Ключи Google и ElevenLabs хранятся там.'; h.classList.remove('hidden'); }
   initNav(); initReview(); initStructure(); initTranslate(); initBlurb(); initPromo(); initLetters(); initImages(); initAudio(); initChat(); initManuscript(); initMemory(); initHistory(); initSettings();
   renderBookDependent(); updateKeyState(); showSection('home');
+  applyTextHome();
+  receiveHandoff();
+  window.addEventListener('hashchange', () => { receiveHandoff(); });
 }
-window.__wa = { md: md, mdToPlain: mdToPlain, splitText: splitText, chunkByBytes: chunkByBytes, bytesOf: bytesOf, Engine: Engine, getBook: () => book, getSettings: getSettings, getNotes: () => notes, Store: Store, LocalDB: LocalDB, importBackup: (o) => importBackup(o) };
+window.__wa = { md: md, mdToPlain: mdToPlain, splitText: splitText, chunkByBytes: chunkByBytes, bytesOf: bytesOf, Engine: Engine, getBook: () => book, getSettings: getSettings, getNotes: () => notes, Store: Store, LocalDB: LocalDB, importBackup: (o) => importBackup(o), packHandoff: packHandoff, unpackHandoff: unpackHandoff, handoffUrl: handoffUrl };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

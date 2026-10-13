@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="description" content="Помощник писателя: разбор рукописи, структура, перевод, описание книги, посты, письма издателям, иллюстрации и озвучка.">
 <title>Помощник писателя</title>
-<link rel="stylesheet" href="styles.css?v=f5668438">
+<link rel="stylesheet" href="styles.css?v=c4f4cc1a">
 </head>
 <body>
 <div class="app">
@@ -32,6 +32,7 @@
       <p class="lead">Выберите, что нужно сделать. Помощник читает вашу рукопись перед каждым ответом. Книгу пишете вы, а он помогает советом, разбором, картинками, озвучкой и готовыми текстами для продвижения.</p>
       <div id="bookBanner" class="banner hidden"><div><b>Рукопись пока пуста.</b> Загрузите главу в разделе «Рукопись» (файл .docx или .txt), и помощник начнёт работать с вашим текстом. Если у вас есть резервная копия помощника, загрузите её в разделе «Память помощника».</div><button class="btn" data-go="manuscript">Открыть рукопись</button></div>
       <div id="webHint" class="hint-box hidden" style="margin-bottom:18px"></div>
+      <div id="textHint" class="hint-box hidden" style="margin-bottom:18px"></div>
       <div class="cards" id="homeCards"></div>
       <div class="hint-box">💡 <b>Подсказка.</b> Всё, что помощник напишет, сохраняется в разделе «История». Когда допишете новую главу — добавьте её в разделе «Рукопись». Решения по сюжету и свои пожелания записывайте в «Память помощника» — он будет учитывать их в каждом ответе.</div>
     </section>
@@ -124,6 +125,7 @@
     <section class="section hidden" id="sec-images">
       <h1>🎨 Иллюстрации</h1>
       <p class="lead">Нейросеть Nano Banana рисует картинки по вашему тексту: сцену из фрагмента, ключевой момент главы, портрет героя, место действия или обложку. Сначала помощник превращает текст в задание для художника (его можно поправить), потом рисует несколько вариантов.</p>
+      <div id="imgModeInfo" class="hint-box hidden" style="margin-bottom:14px"></div>
       <div id="imagesUnavailable" class="banner hidden"><div><b>Иллюстрации здесь недоступны:</b> браузер не даёт сохранять файлы. Откройте помощника в обычном окне Chrome или Safari, не в приватном режиме.</div></div>
       <div class="step"><div class="step-title"><span class="num">1</span>Что рисуем?</div><div id="imgKinds"></div></div>
       <div class="step"><div class="step-title"><span class="num">2</span>По какому тексту?</div><div id="imgTarget"></div><div class="muted small" style="margin-top:8px">Для портрета героя и обложки текст можно не выбирать — помощник возьмёт всю рукопись.</div></div>
@@ -136,6 +138,7 @@
         <label class="field"><span>Описание для нейросети (по-английски — так она рисует точнее)</span><textarea id="imgPrompt" rows="6"></textarea></label>
         <div class="run-row" style="margin:0">
           <button class="btn-primary" id="imgDrawBtn">Нарисовать</button>
+          <a class="btn-primary hidden" id="imgHandoff" href="#" target="_blank" rel="noopener">Нарисовать в мастерской →</a>
           <select id="imgCount" style="width:auto"><option value="1">1 вариант</option><option value="2" selected>2 варианта</option><option value="4">4 варианта</option></select>
           <span class="muted small" id="imgStatus"></span>
         </div>
@@ -157,6 +160,7 @@
     <section class="section hidden" id="sec-audio">
       <h1>🎧 Озвучка</h1>
       <p class="lead">Озвучка фрагмента или главы голосами ElevenLabs — готовыми или вашим собственным. Помощник сначала расставляет в тексте интонации и паузы, потом нейросеть читает.</p>
+      <div id="audModeInfo" class="hint-box hidden" style="margin-bottom:14px"></div>
       <div id="audioUnavailable" class="banner hidden"><div><b>Озвучка здесь недоступна:</b> браузер не даёт сохранять файлы. Откройте помощника в обычном окне Chrome или Safari, не в приватном режиме.</div></div>
       <div class="step">
         <div class="step-title"><span class="num">1</span>Чей голос?</div>
@@ -175,7 +179,7 @@
       <div class="step hidden" id="audScriptStep">
         <div class="step-title">Текст с пометками для чтеца <span class="muted small">— можно править</span></div>
         <textarea id="audScript" rows="10"></textarea>
-        <div class="run-row" style="margin:12px 0 0"><button class="btn-primary" id="audSpeakBtn">Озвучить</button><span class="muted small" id="audStatus"></span></div>
+        <div class="run-row" style="margin:12px 0 0"><button class="btn-primary" id="audSpeakBtn">Озвучить</button><a class="btn-primary hidden" id="audHandoff" href="#" target="_blank" rel="noopener">Озвучить в мастерской →</a><span class="muted small" id="audStatus"></span></div>
       </div>
       <div id="audResult"></div>
       <div class="step">
@@ -290,6 +294,9 @@
         </label>
         <div id="setModelCustomWrap" class="hidden"><label class="field"><span>Название модели</span><input type="text" id="setModelCustom" placeholder="например, gemini-3.8-pro"></label></div>
         </div>
+        <div data-modes="local"><label class="field"><span>Где работают тексты</span>
+          <select id="setTextHome"><option value="here">Здесь, через Gemini по ключу Google</option><option value="claude">На странице claude.ai, по подписке Claude</option></select></label>
+          <div class="muted small" style="margin:-6px 0 12px">Если выбрать claude.ai, здесь останутся иллюстрации и озвучка. Тексты, задания для картинок и разметку интонаций будет готовить Claude на странице claude.ai.</div></div>
         <label class="field"><span>Как думать над ответом</span>
           <select id="setThinking">
             <option value="auto">Как обычно (рекомендуется)</option>
@@ -369,8 +376,8 @@
 <div id="toast" class="toast hidden"></div>
 
 <script src="config.js?v=5937e846"></script>
-<script src="prompts.js?v=0fa0cfe1"></script>
+<script src="prompts.js?v=e3ccbf31"></script>
 <script src="docx.js?v=5b2ce0b0"></script>
-<script src="app.js?v=acbae18d"></script>
+<script src="app.js?v=8c26d753"></script>
 </body>
 </html>
