@@ -957,14 +957,30 @@ const SECTIONS = [
 let currentSection = 'home';
 const TEXT_SECTIONS = ['review', 'structure', 'translate', 'blurb', 'promo', 'letters', 'chat'];
 function textsElsewhere() { return Store.mode === 'local' && getSettings().textHome === 'claude'; }
-function showSection(id) {
+// ---- запоминаем открытый раздел и прокрутку, чтобы после обновления страницы вернуться туда же
+const VIEW_KEY = 'wa_view';
+let viewReady = false;
+function saveView() {
+  if (!viewReady) return;
+  const v = JSON.stringify({ section: currentSection, scroll: Math.round(window.scrollY || 0), ts: Date.now() });
+  try { sessionStorage.setItem(VIEW_KEY, v); } catch (e) { try { localStorage.setItem(VIEW_KEY, v); } catch (e2) { /* хранилище недоступно */ } }
+}
+function loadView() {
+  let raw = null;
+  try { raw = sessionStorage.getItem(VIEW_KEY); } catch (e) { /* недоступно */ }
+  if (!raw) { try { raw = localStorage.getItem(VIEW_KEY); } catch (e) { /* недоступно */ } }
+  try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+function showSection(id, opts) {
+  opts = opts || {};
   currentSection = id;
   $$('.section').forEach(s => s.classList.toggle('hidden', s.id !== 'sec-' + id));
   $$('.nav-btn').forEach(b => b.classList.toggle('on', b.dataset.id === id));
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (!opts.keepScroll) window.scrollTo({ top: 0, behavior: 'smooth' });
   if (id === 'history') renderHistory();
   if (id === 'settings') fillSettings();
   if (id === 'chat') scrollChat();
+  saveView();
 }
 function initNav() {
   const nav = $('#nav'); nav.innerHTML = ''; let sepDone = false;
@@ -1675,6 +1691,8 @@ async function receiveHandoff() {
 
 // ================= старт =================
 async function init() {
+  const savedView = loadView();
+  try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (e) { /* не поддерживается */ }
   $('#sidebarFoot').textContent = 'Загружаю…';
   let st;
   try { st = await Store.init(); }
@@ -1702,8 +1720,19 @@ async function init() {
   const webUrl = (window.CONFIG || {}).webUrl;
   if (Store.mode === 'cloud' && webUrl) { const h = $('#webHint'); h.innerHTML = '🎨🎧 <b>Иллюстрации и озвучка.</b> Задание для художника и разметку интонаций Claude готовит здесь, по вашей подписке. Рисует и читает мастерская: <a href="' + esc(webUrl) + '" target="_blank" rel="noopener">' + esc(webUrl) + '</a>. Ключи Google и ElevenLabs хранятся там.'; h.classList.remove('hidden'); }
   initNav(); initReview(); initStructure(); initTranslate(); initBlurb(); initPromo(); initLetters(); initImages(); initAudio(); initChat(); initManuscript(); initMemory(); initHistory(); initSettings();
-  renderBookDependent(); updateKeyState(); showSection('home');
+  renderBookDependent(); updateKeyState(); showSection('home', { keepScroll: true });
   applyTextHome();
+  // возвращаемся в раздел, который был открыт до обновления страницы
+  if (savedView && savedView.section && $('.nav-btn[data-id="' + savedView.section + '"]')) {
+    showSection(savedView.section, { keepScroll: true });
+    const y = savedView.scroll || 0;
+    if (y > 0) { const go = () => window.scrollTo(0, y); requestAnimationFrame(go); setTimeout(go, 400); }
+  }
+  viewReady = true; setTimeout(saveView, 500);
+  window.addEventListener('pagehide', saveView);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveView(); });
+  let scrollTimer = null;
+  window.addEventListener('scroll', () => { clearTimeout(scrollTimer); scrollTimer = setTimeout(saveView, 300); }, { passive: true });
   receiveHandoff();
   window.addEventListener('hashchange', () => { receiveHandoff(); });
 }
