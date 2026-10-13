@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Помощник писателя: разбор рукописи, структура, перевод, описание книги, посты, письма издателям, иллюстрации и озвучка.">
+<title>Помощник писателя</title>
+<link rel="stylesheet" href="styles.css?v=f5668438">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-title">✍️ Помощник писателя</div>
+      <div class="brand-sub" id="brandBook"></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot small muted" id="sidebarFoot"></div>
+  </aside>
+
+  <main class="main" id="main">
+
+    <div id="keyBanner" class="banner hidden">
+      <div><b>Помощник ещё не подключён.</b> Чтобы он заработал, вставьте ключ доступа в разделе «Настройки». Это делается один раз.</div>
+      <button class="btn" data-go="settings">Открыть настройки</button>
+    </div>
+
+    <!-- ГЛАВНАЯ -->
+    <section class="section" id="sec-home">
+      <h1>Привет! Чем займёмся?</h1>
+      <p class="lead">Выберите, что нужно сделать. Помощник читает вашу рукопись перед каждым ответом. Книгу пишете вы, а он помогает советом, разбором, картинками, озвучкой и готовыми текстами для продвижения.</p>
+      <div id="bookBanner" class="banner hidden"><div><b>Рукопись пока пуста.</b> Загрузите главу в разделе «Рукопись» (файл .docx или .txt), и помощник начнёт работать с вашим текстом. Если у вас есть резервная копия помощника, загрузите её в разделе «Память помощника».</div><button class="btn" data-go="manuscript">Открыть рукопись</button></div>
+      <div id="webHint" class="hint-box hidden" style="margin-bottom:18px"></div>
+      <div class="cards" id="homeCards"></div>
+      <div class="hint-box">💡 <b>Подсказка.</b> Всё, что помощник напишет, сохраняется в разделе «История». Когда допишете новую главу — добавьте её в разделе «Рукопись». Решения по сюжету и свои пожелания записывайте в «Память помощника» — он будет учитывать их в каждом ответе.</div>
+    </section>
+
+    <!-- 1. ЗАМЕЧАНИЯ -->
+    <section class="section hidden" id="sec-review">
+      <h1>📝 Замечания к рукописи</h1>
+      <p class="lead">Помощник прочитает текст как внимательный редактор и скажет, что получилось хорошо, что стоит поправить и где ошибки. Текст за вас он не переписывает — только советует и показывает варианты.</p>
+      <div class="step"><div class="step-title"><span class="num">1</span>Что проверить?</div><div id="reviewModes"></div></div>
+      <div class="step"><div class="step-title"><span class="num">2</span>Какую часть книги?</div><div id="reviewTarget"></div></div>
+      <div class="step"><div class="step-title"><span class="num">3</span>Пожелания (можно пропустить)</div><textarea id="reviewExtra" rows="2" placeholder="Например: обрати особое внимание на диалоги"></textarea></div>
+      <div class="run-row"><button class="btn-primary" id="reviewRun">Проверить текст</button></div>
+      <div id="reviewResult"></div>
+    </section>
+
+    <!-- 2. СТРУКТУРА -->
+    <section class="section hidden" id="sec-structure">
+      <h1>🧭 Структура книги</h1>
+      <p class="lead">Карта сцен, темп, сюжетные линии и возможные пути развития истории. Полезно, чтобы увидеть книгу целиком и решить, что писать дальше.</p>
+      <div class="step"><div class="step-title"><span class="num">1</span>Что нужно?</div><div id="stModes"></div></div>
+      <div class="step"><div class="step-title"><span class="num">2</span>Какую часть книги брать?</div><div id="stTarget"></div></div>
+      <div class="step"><div class="step-title"><span class="num">3</span>Пожелания (можно пропустить)</div><textarea id="stExtra" rows="2" placeholder="Например: я хочу, чтобы в книге было 12 глав"></textarea></div>
+      <div class="run-row"><button class="btn-primary" id="stRun">Разобрать</button></div>
+      <div id="stResult"></div>
+    </section>
+
+    <!-- 3. ПЕРЕВОД -->
+    <section class="section hidden" id="sec-translate">
+      <h1>🌍 Перевод</h1>
+      <p class="lead">Перевод главы или фрагмента на другой язык. Длинный текст помощник переводит по частям и склеивает — просто подождите, пока закончит.</p>
+      <div class="step"><div class="step-title"><span class="num">1</span>На какой язык?</div><div id="trLangs"></div>
+        <div id="trOtherWrap" class="hidden" style="margin-top:12px"><input type="text" id="trOther" placeholder="Напишите язык, например: японский"></div></div>
+      <div class="step"><div class="step-title"><span class="num">2</span>Как переводить?</div><div id="trStyle"></div></div>
+      <div class="step"><div class="step-title"><span class="num">3</span>Что переводить?</div><div id="trTarget"></div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="trNotes"> <span>Добавить в конце советы переводчика: что в тексте сложно перевести и как переданы имена</span></label></div>
+      <div class="run-row"><button class="btn-primary" id="trRun">Перевести</button></div>
+      <div id="trResult"></div>
+    </section>
+
+    <!-- 4. ОПИСАНИЕ -->
+    <section class="section hidden" id="sec-blurb">
+      <h1>📖 Описание книги</h1>
+      <p class="lead">Аннотация для обложки, описание для магазина, синопсис для издательства, варианты названий и портрет читателя — всё на основе вашей рукописи.</p>
+      <div class="step"><div class="step-title"><span class="num">1</span>Что написать?</div><div id="blModes"></div></div>
+      <div class="step"><div class="step-title"><span class="num">2</span>Пожелания (можно пропустить)</div><textarea id="blExtra" rows="2" placeholder="Например: сделай упор на приключения, а не на философию"></textarea></div>
+      <div class="run-row"><button class="btn-primary" id="blRun">Написать</button></div>
+      <div id="blResult"></div>
+    </section>
+
+    <!-- 5. ПОСТЫ -->
+    <section class="section hidden" id="sec-promo">
+      <h1>📣 Посты и продвижение</h1>
+      <p class="lead">Контент-план и готовые посты для соцсетей. Публиковать будете сами — помощник готовит материал, который можно просто скопировать.</p>
+      <div class="step"><div class="step-title"><span class="num">1</span>Где публикуем?</div><div id="promoNets"></div></div>
+      <div class="step"><div class="step-title"><span class="num">2</span>Какая цель сейчас?</div><div id="promoGoal"></div></div>
+      <div class="step"><div class="step-title"><span class="num">3</span>Пожелания (можно пропустить)</div><textarea id="promoExtra" rows="2" placeholder="Например: пиши без эмодзи; у меня уже есть 200 подписчиков"></textarea></div>
+      <div class="step">
+        <div class="step-title"><span class="num">4</span>Что подготовить?</div>
+        <div class="run-row" style="margin:0">
+          <button class="btn-primary" id="promoPlan">Составить контент-план</button>
+          <select id="promoPeriod" style="width:auto"><option value="2 недели">на 2 недели</option><option value="1 месяц (4 недели)" selected>на месяц</option></select>
+        </div>
+        <div class="run-row" style="margin:14px 0 0">
+          <button class="btn-primary" id="promoPosts">Написать первые посты</button>
+          <select id="promoCount" style="width:auto"><option value="5">5 постов</option><option value="10" selected>10 постов</option><option value="15">15 постов</option></select>
+        </div>
+      </div>
+      <div id="promoResult"></div>
+    </section>
+
+    <!-- 6. ПИСЬМА -->
+    <section class="section hidden" id="sec-letters">
+      <h1>✉️ Письма издателям</h1>
+      <p class="lead">Готовые письма в издательства: предложение рукописи, сопроводительное письмо, короткий питч, напоминание. Поля, которых помощник не знает, он оставит в квадратных скобках — впишите их перед отправкой.</p>
+      <div class="step"><div class="step-title"><span class="num">1</span>Какое письмо?</div><div id="ltTypes"></div></div>
+      <div class="step"><div class="step-title"><span class="num">2</span>Данные для письма (всё необязательно)</div>
+        <div class="kv">
+          <label class="field"><span>Издательство</span><input type="text" id="ltPublisher" placeholder="Например: Эксмо"></label>
+          <label class="field"><span>Кому (имя редактора)</span><input type="text" id="ltAddressee" placeholder="Например: Анна Петрова"></label>
+        </div>
+        <label class="field"><span>Об авторе (своими словами)</span><textarea id="ltBio" rows="2" placeholder="Кто вы, чем занимаетесь, писали ли раньше, есть ли читатели в соцсетях"></textarea></label>
+        <label class="field"><span>Что прилагаете</span><input type="text" id="ltAttach" placeholder="Например: синопсис и первая глава"></label>
+        <label class="field"><span>Пожелания</span><textarea id="ltExtra" rows="2" placeholder="Например: тон построже; упомяни, что готов к редактуре"></textarea></label>
+      </div>
+      <div class="run-row"><button class="btn-primary" id="ltRun">Написать письмо</button></div>
+      <div id="ltResult"></div>
+    </section>
+
+    <!-- 8. ИЛЛЮСТРАЦИИ -->
+    <section class="section hidden" id="sec-images">
+      <h1>🎨 Иллюстрации</h1>
+      <p class="lead">Нейросеть Nano Banana рисует картинки по вашему тексту: сцену из фрагмента, ключевой момент главы, портрет героя, место действия или обложку. Сначала помощник превращает текст в задание для художника (его можно поправить), потом рисует несколько вариантов.</p>
+      <div id="imagesUnavailable" class="banner hidden"><div><b>Иллюстрации здесь недоступны:</b> браузер не даёт сохранять файлы. Откройте помощника в обычном окне Chrome или Safari, не в приватном режиме.</div></div>
+      <div class="step"><div class="step-title"><span class="num">1</span>Что рисуем?</div><div id="imgKinds"></div></div>
+      <div class="step"><div class="step-title"><span class="num">2</span>По какому тексту?</div><div id="imgTarget"></div><div class="muted small" style="margin-top:8px">Для портрета героя и обложки текст можно не выбирать — помощник возьмёт всю рукопись.</div></div>
+      <div class="step"><div class="step-title"><span class="num">3</span>Стиль</div><div id="imgStyles"></div></div>
+      <div class="step"><div class="step-title"><span class="num">4</span>Формат и пожелания</div><div id="imgAspect" style="margin-bottom:12px"></div><textarea id="imgExtra" rows="2" placeholder="Например: герой стоит спиной к морю; вечер; крупный план; нарисуй второго героя"></textarea></div>
+      <div class="run-row"><button class="btn-primary" id="imgPromptBtn">Придумать задание для художника</button><span class="muted small" id="imgPromptStatus"></span></div>
+      <div class="step hidden" id="imgPromptStep">
+        <div class="step-title">Задание для художника <span class="muted small">— можно править</span></div>
+        <label class="field"><span>Подпись (по-русски)</span><input type="text" id="imgCaption"></label>
+        <label class="field"><span>Описание для нейросети (по-английски — так она рисует точнее)</span><textarea id="imgPrompt" rows="6"></textarea></label>
+        <div class="run-row" style="margin:0">
+          <button class="btn-primary" id="imgDrawBtn">Нарисовать</button>
+          <select id="imgCount" style="width:auto"><option value="1">1 вариант</option><option value="2" selected>2 варианта</option><option value="4">4 варианта</option></select>
+          <span class="muted small" id="imgStatus"></span>
+        </div>
+      </div>
+      <div id="imgResults" class="img-grid"></div>
+      <div class="step">
+        <div class="step-title">Внешность героев <span class="muted small">— чтобы на всех картинках герои выглядели одинаково</span></div>
+        <textarea id="imgBible" rows="4" placeholder="Например: главный герой — 35 лет, подтянутый, тёмные волосы с проседью, трёхдневная щетина, выгоревшая рубашка…"></textarea>
+        <div class="run-row" style="margin:12px 0 0"><button class="btn" id="imgBibleAuto">Заполнить по рукописи</button><button class="btn" id="imgBibleSave">Сохранить</button><span class="muted small" id="imgBibleStatus"></span></div>
+      </div>
+      <div class="step">
+        <div class="step-title">Галерея <span class="muted small" id="imgGalleryStats"></span></div>
+        <div class="run-row" style="margin:0 0 12px"><select id="imgLayoutChapter" style="width:auto"></select><button class="btn" id="imgLayoutBtn">Открыть главу с иллюстрациями</button></div>
+        <div id="imgGallery" class="img-grid"></div>
+      </div>
+    </section>
+
+    <!-- 9. ОЗВУЧКА -->
+    <section class="section hidden" id="sec-audio">
+      <h1>🎧 Озвучка</h1>
+      <p class="lead">Озвучка фрагмента или главы голосами ElevenLabs — готовыми или вашим собственным. Помощник сначала расставляет в тексте интонации и паузы, потом нейросеть читает.</p>
+      <div id="audioUnavailable" class="banner hidden"><div><b>Озвучка здесь недоступна:</b> браузер не даёт сохранять файлы. Откройте помощника в обычном окне Chrome или Safari, не в приватном режиме.</div></div>
+      <div class="step">
+        <div class="step-title"><span class="num">1</span>Чей голос?</div>
+        <div class="muted small" id="audioUsage" style="margin-bottom:10px"></div>
+        <div id="voiceList"></div>
+        <details class="adv" style="margin-top:14px"><summary>Создать свой голос</summary>
+          <div class="muted small" style="margin:8px 0 10px">Запишите 1–5 минут чистой речи без музыки и шума (например, прочитайте страницу книги) и загрузите файл .mp3, .m4a или .wav. ElevenLabs создаст голос примерно за минуту. Нужен платный тариф ElevenLabs (от Starter).</div>
+          <label class="field"><span>Название голоса</span><input type="text" id="voiceName" placeholder="Например: Мой голос"></label>
+          <label class="field"><span>Аудиозапись (можно несколько файлов)</span><input type="file" id="voiceFiles" accept="audio/*,.m4a,.mp3,.wav,.ogg" multiple></label>
+          <div class="run-row" style="margin:0"><button class="btn-primary" id="voiceCreate">Создать голос</button><span class="muted small" id="voiceStatus"></span></div>
+        </details>
+      </div>
+      <div class="step"><div class="step-title"><span class="num">2</span>Что озвучить?</div><div id="audTarget"></div><div class="muted small" id="audCost" style="margin-top:8px">Совет для пробы: вставьте полстраницы текста — так вы услышите голос и не потратите лишние знаки.</div></div>
+      <div class="step"><div class="step-title"><span class="num">3</span>Манера чтения</div><div id="audManner"></div></div>
+      <div class="run-row"><button class="btn-primary" id="audPrepBtn">Разметить интонации</button><button class="btn" id="audSkipBtn">Озвучить как есть</button><span class="muted small" id="audPrepStatus"></span></div>
+      <div class="step hidden" id="audScriptStep">
+        <div class="step-title">Текст с пометками для чтеца <span class="muted small">— можно править</span></div>
+        <textarea id="audScript" rows="10"></textarea>
+        <div class="run-row" style="margin:12px 0 0"><button class="btn-primary" id="audSpeakBtn">Озвучить</button><span class="muted small" id="audStatus"></span></div>
+      </div>
+      <div id="audResult"></div>
+      <div class="step">
+        <div class="step-title">Записи <span class="muted small" id="audStats"></span></div>
+        <div id="audGallery" class="list"></div>
+      </div>
+    </section>
+
+    <!-- 7. РАЗГОВОР -->
+    <section class="section hidden" id="sec-chat">
+      <h1>💬 Свободный разговор</h1>
+      <p class="lead">Задайте любой вопрос о книге: про героя, сцену, идею, название, слово. Помощник помнит рукопись и этот разговор.</p>
+      <div class="chat" id="chatLog"></div>
+      <div class="chat-input">
+        <textarea id="chatText" rows="3" placeholder="Напишите вопрос… (Enter — отправить, Shift+Enter — новая строка)"></textarea>
+        <button class="btn-primary" id="chatSend">Отправить</button>
+      </div>
+      <div class="run-row"><button class="btn hidden" id="chatStop">Остановить</button><button class="btn" id="chatReset">Начать разговор заново</button></div>
+    </section>
+
+    <!-- РУКОПИСЬ -->
+    <section class="section hidden" id="sec-manuscript">
+      <h1>📚 Рукопись</h1>
+      <p class="lead">Здесь хранится текст книги, который помощник читает перед каждым ответом. Дописали главу — добавьте её сюда.</p>
+      <div class="step">
+        <div class="step-title">О книге</div>
+        <div class="kv">
+          <label class="field"><span>Название книги</span><input type="text" id="bkTitle"></label>
+          <label class="field"><span>Серия</span><input type="text" id="bkSeries"></label>
+        </div>
+        <label class="field"><span>Автор (имя или псевдоним — пригодится для писем и постов)</span><input type="text" id="bkAuthor" placeholder="Например: Иван Петров"></label>
+        <label class="field"><span>О книге: жанр, герои, главная идея, стиль. Помощник учитывает это в каждом ответе</span><textarea id="bkAbout" rows="5" placeholder="Например: приключенческий роман с философским подтекстом; главный герой — …; главная идея — …; стиль — …"></textarea></label>
+        <div class="run-row" style="margin:0 0 12px"><button class="btn" id="bkAboutAuto">Заполнить по рукописи</button><span class="muted small" id="bkAboutStatus"></span></div>
+        <button class="btn" id="bkSave">Сохранить</button>
+      </div>
+      <div class="step">
+        <div class="step-title">Главы <span class="muted small" id="bkStats"></span></div>
+        <div class="list" id="chapterList"></div>
+      </div>
+      <div class="step hidden" id="summaryStep">
+        <div class="step-title">Сводка для помощника</div>
+        <div class="muted small" style="margin-bottom:10px">Вся рукопись не помещается в один запрос, поэтому помощник один раз составляет подробную сводку текста (сюжет, герои, нити, цитаты) и обновляет её сам, когда текст меняется.</div>
+        <div id="summaryInfo"></div>
+        <div class="run-row" style="margin:12px 0 0"><button class="btn" id="summaryRebuild">Составить заново</button></div>
+      </div>
+      <div class="step">
+        <div class="step-title">Добавить главу</div>
+        <label class="field"><span>Название главы</span><input type="text" id="chTitle" placeholder="Например: Глава 2"></label>
+        <label class="field"><span>Текст главы</span><textarea id="chText" rows="8" placeholder="Вставьте текст сюда или загрузите файл ниже"></textarea></label>
+        <label class="field"><span>Или загрузить файл (.docx, .txt)</span><input type="file" id="chFile" accept=".docx,.txt,.md,.text"></label>
+        <button class="btn-primary" id="chAdd">Добавить главу</button>
+      </div>
+      <div class="run-row">
+        <button class="btn" id="bkExport">Скачать всю рукопись (.txt)</button>
+        <button class="btn btn-danger" id="bkReset">Вернуть исходную рукопись</button>
+      </div>
+    </section>
+
+    <!-- ПАМЯТЬ -->
+    <section class="section hidden" id="sec-memory">
+      <h1>🧠 Память помощника</h1>
+      <p class="lead">Всё, что записано здесь, помощник учитывает в каждом ответе: решения по сюжету, факты о героях, ваши предпочтения. Например: «Второстепенный герой выживает», «Название книги не менять», «Посты писать без эмодзи».</p>
+      <div class="step">
+        <div class="step-title">Записать в память</div>
+        <textarea id="noteText" rows="2" placeholder="Что помощник должен помнить?"></textarea>
+        <div class="run-row" style="margin:12px 0 0"><button class="btn-primary" id="noteAdd">Запомнить</button></div>
+      </div>
+      <div class="step">
+        <div class="step-title">Что помощник помнит <span class="muted small" id="noteStats"></span></div>
+        <div class="list" id="noteList"></div>
+      </div>
+      <div class="step">
+        <div class="step-title">Где хранятся данные</div>
+        <div id="storageInfo"></div>
+        <div class="run-row" style="margin:14px 0 0"><button class="btn" id="backupBtn">Скачать резервную копию</button><button class="btn" id="restoreBtn">Загрузить резервную копию</button><input type="file" id="restoreFile" accept=".json,application/json" class="hidden"></div>
+      </div>
+    </section>
+
+    <!-- ИСТОРИЯ -->
+    <section class="section hidden" id="sec-history">
+      <h1>🕘 История</h1>
+      <p class="lead">Всё, что помощник написал раньше. Можно открыть, скопировать или сохранить в файл.</p>
+      <div class="list" id="historyList"></div>
+      <div class="run-row"><button class="btn btn-danger" id="historyClear">Очистить историю</button></div>
+    </section>
+
+    <!-- НАСТРОЙКИ -->
+    <section class="section hidden" id="sec-settings">
+      <h1>⚙️ Настройки</h1>
+      <p class="lead">Ключ доступа нужен, чтобы помощник мог обращаться к нейросети Google Gemini. Он хранится только на этом компьютере, в вашем браузере.</p>
+      <div class="step">
+        <div id="setClaudeInfo" class="ok-box hidden" style="margin:0 0 16px"><b>На этой странице помощник работает на Claude</b> через ваш аккаунт claude.ai. Ключ Google не нужен: страница на claude.ai не может обращаться к другим сервисам. При первом запросе браузер спросит, разрешить ли странице использовать Claude — нажмите «Разрешить».</div>
+        <div id="setGeminiWrap">
+        <label class="field"><span>Ключ доступа (API-ключ)</span>
+          <div style="display:flex;gap:8px"><input type="password" id="setKey" placeholder="Вставьте ключ сюда" autocomplete="off"><button class="btn" id="setKeyShow" type="button">Показать</button></div>
+        </label>
+        <div class="muted small" id="setSource"></div>
+        <div class="muted small">Где взять ключ Gemini: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>, кнопка «Create API key». Это бесплатно.</div>
+        <label class="field" style="margin-top:14px"><span>Ключ ElevenLabs (для озвучки, начинается с sk_)</span>
+          <div style="display:flex;gap:8px"><input type="password" id="setEleven" placeholder="Вставьте ключ ElevenLabs" autocomplete="off"><button class="btn" id="setElevenShow" type="button">Показать</button></div>
+        </label>
+        <div class="muted small" id="setElevenSource"></div>
+        <div class="muted small">Где взять ключ ElevenLabs: <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io → настройки → API Keys</a>. Нужен ключ, который начинается с sk_.</div>
+        <label class="field" style="margin-top:14px"><span>Модель</span>
+          <select id="setModel">
+            <option value="gemini-3.8-flash">Gemini 3.8 Flash — рекомендуется</option>
+            <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
+            <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+            <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+            <option value="custom">Другая модель…</option>
+          </select>
+        </label>
+        <div id="setModelCustomWrap" class="hidden"><label class="field"><span>Название модели</span><input type="text" id="setModelCustom" placeholder="например, gemini-3.8-pro"></label></div>
+        </div>
+        <label class="field"><span>Как думать над ответом</span>
+          <select id="setThinking">
+            <option value="auto">Как обычно (рекомендуется)</option>
+            <option value="low">Быстрее — короче ждать, чуть проще ответы</option>
+            <option value="high">Вдумчивее — дольше ждать, глубже разбор</option>
+          </select>
+        </label>
+        <details class="adv" id="setBaseWrap"><summary>Дополнительно</summary>
+          <label class="field" style="margin-top:10px"><span>Адрес сервера (менять только если пользуетесь прокси-сервисом)</span><input type="url" id="setBase" placeholder="https://generativelanguage.googleapis.com"></label>
+          <label class="field"><span>Модель для картинок</span><input type="text" id="setImageModel" placeholder="gemini-nano-banana-2.1"></label>
+          <label class="field"><span>Модель озвучки ElevenLabs</span>
+            <select id="setElevenModel"><option value="eleven_v4">Eleven v4 — новейшая, выразительная, понимает пометки (рекомендуется)</option><option value="eleven_v3">Eleven v3 — выразительная, проверенная</option><option value="eleven_multilingual_v2">Multilingual v2 — ровная и надёжная, только паузы</option></select>
+          </label>
+        </details>
+        <div class="run-row">
+          <button class="btn-primary" id="setSave">Сохранить</button>
+          <button class="btn" id="setTest">Проверить подключение</button>
+          <button class="btn" id="setReset">Сбросить</button>
+        </div>
+        <div id="setStatus"></div>
+      </div>
+    </section>
+
+    <!-- ПОМОЩЬ -->
+    <section class="section hidden" id="sec-help">
+      <h1>❓ Помощь</h1>
+      <div class="step md">
+        <h3>Как это работает</h3>
+        <p>Помощник — это программа, которая отправляет вашу рукопись и ваш вопрос нейросети Google Gemini и показывает ответ. Текст книги он «помнит» всегда, поэтому отвечает именно про вашу историю.</p>
+        <h3>С чего начать</h3>
+        <ol>
+          <li>Откройте «Настройки», вставьте ключ доступа и нажмите «Проверить подключение».</li>
+          <li>Зайдите в любой раздел слева, выберите, что нужно, и нажмите большую синюю кнопку.</li>
+          <li>Подождите: ответ появляется постепенно, по мере написания. Большие задания (перевод главы) могут занять несколько минут.</li>
+          <li>Готовый текст можно «Скопировать» (он вставится с форматированием в Word и соцсети) или «Сохранить файл».</li>
+        </ol>
+        <h3>Разделы</h3>
+        <ul>
+          <li><b>Замечания к рукописи</b> — разбор текста: впечатление, сюжет, стиль, ошибки.</li>
+          <li><b>Структура книги</b> — карта сцен, план книги, слабые места, идеи для следующей главы.</li>
+          <li><b>Перевод</b> — литературный перевод главы или фрагмента.</li>
+          <li><b>Описание книги</b> — аннотация, синопсис, названия, портрет читателя.</li>
+          <li><b>Посты и продвижение</b> — контент-план и готовые посты для ВКонтакте и Telegram.</li>
+          <li><b>Письма издателям</b> — письмо-предложение, сопроводительное, питч, напоминание.</li>
+          <li><b>Иллюстрации</b> — картинки по тексту (Nano Banana): сцена, глава, герой, место, обложка; галерея и глава с иллюстрациями.</li>
+          <li><b>Озвучка</b> — чтение текста голосами ElevenLabs или вашим голосом, с расстановкой интонаций.</li>
+          <li><b>Свободный разговор</b> — любой вопрос о книге.</li>
+          <li><b>Рукопись</b> — текст книги. Добавляйте сюда новые главы.</li>
+          <li><b>Память помощника</b> — факты и решения, которые он должен учитывать всегда.</li>
+          <li><b>История</b> — всё, что помощник уже написал.</li>
+        </ul>
+        <div data-modes="server"><h3>Два способа открыть помощника</h3>
+        <ul>
+          <li><b>«Запустить помощника.command»</b> (рекомендуется) — откроется чёрное окно и браузер. Все данные хранятся в базе SQLite в папке <code>data</code>. Окно не закрывайте, пока работаете.</li>
+          <li><b>index.html</b> — работает без сервера, но данные хранятся только в браузере и пропадут при очистке его данных.</li>
+        </ul></div>
+        <div data-modes="local"><h3>Где хранятся ваши данные</h3>
+        <ul>
+          <li>Рукопись, история, разговоры, картинки и записи хранятся в этом браузере, на этом устройстве. На сервер они не отправляются.</li>
+          <li>Ключи доступа тоже хранятся только в этом браузере. Запросы идут напрямую в Google и ElevenLabs.</li>
+          <li>Чтобы перенести всё на другое устройство: «Память помощника» → «Скачать резервную копию» здесь, затем «Загрузить резервную копию» там.</li>
+          <li>Если очистить данные браузера, всё сотрётся. Время от времени скачивайте резервную копию.</li>
+        </ul></div>
+        <h3>Если что-то не работает</h3>
+        <ul>
+          <li><b>«Помощник ещё не подключён»</b> — вставьте ключ в «Настройках».</li>
+          <li><b>«Нет связи с сервером»</b> — проверьте интернет; для доступа к Google может понадобиться VPN.</li>
+          <li><b>«Слишком много запросов»</b> — подождите минуту и повторите.</li>
+          <li><b>Ответ оборвался</b> — возьмите фрагмент поменьше (например, половину главы).</li>
+        </ul>
+        <p class="muted small">Копию книги всё равно держите в своих файлах, как обычно. Резервную копию всех данных помощника можно скачать в разделе «Память помощника».</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+<div id="toast" class="toast hidden"></div>
+
+<script src="config.js?v=5937e846"></script>
+<script src="prompts.js?v=0fa0cfe1"></script>
+<script src="docx.js?v=5b2ce0b0"></script>
+<script src="app.js?v=acbae18d"></script>
+</body>
+</html>
